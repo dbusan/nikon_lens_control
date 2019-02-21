@@ -47,4 +47,21 @@ void PrintHex8(uint8_t data)
   if (data < 16) {Serial.print("0");};
   Serial.print(data, HEX);
 }
+
+class Cmd
+{
+  public: 
+
+  int cmd_byte;
+  int nr_bytes_out;
+  int nr_bytes_in;
+  
+  Cmd(int _bytes_out, int _bytes_in)
+  {
+    nr_bytes_out = _bytes_out;
+    nr_bytes_in = _bytes_in;
+  }
+
+};
+
 #endif //_CONSTANTS_H_
