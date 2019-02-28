@@ -8,7 +8,11 @@ using namespace lain;
 #define SEND_CMD_TYPE 1
 #define RECV_CMD_TYPE 2
 #define SENDRECV_CMD_TYPE 3
+#define SPEC_CMD_TYPE 4
+#define FOCUS_CMD_TYPE 5
 
+#define MIN_FOCUS_DIRN -1
+#define MAX_FOCUS_DIRN 1
 
 #define HS_PIN_IN 3
 #define HS_PIN_OUT 4
@@ -32,6 +36,10 @@ void setup() {
 
   delay(500);
   Serial.print("Enter command in format: [HEX CMD] [N_BYTES_TO_SEND]\n");
+
+  // get basic information
+  result =
+  NikonLens.sendCommand(CMD_GET_INFO_2, 44, in_buffer, 0, out_buffer);
 }
 
 int i = 0;
@@ -60,7 +68,6 @@ void loop() {
     }
     else if (parse_result == RECV_CMD_TYPE)
     {
-      Serial.print("CMD: "); PrintHex8(HexCmd); Serial.print("\n");
       result =
         NikonLens.sendCommand(HexCmd, n_bytes_in, in_buffer, 0, out_buffer);
 
@@ -69,46 +76,77 @@ void loop() {
     }
     else if (parse_result == SENDRECV_CMD_TYPE)
     {
-      
+      result =
+        NikonLens.sendCommand(HexCmd, n_bytes_in, in_buffer, n_bytes_out, out_buffer);
+      // print results
+      print_in_raw(n_bytes_in);
+
+    }
+    else if (parse_result == SPEC_CMD_TYPE)
+    {
+      if (HexCmd == 0x69) // 105 decimal is 69 hex
+      {
+        loop_main_cmds();
+      }
+
+      else if (HexCmd == 0x42)
+      {
+        aperture_sequence();
+      }
+
+      else if (HexCmd == 0x40)
+      {
+        high_cmds();
+      }
+
+      // FOCUS COMMAND
+      else if (HexCmd == 0xFC)
+      {
+        //
+        if (n_bytes_out == MIN_FOCUS_DIRN)
+        {
+          result =
+  NikonLens.sendCommand(CMD_GET_INFO_2, 44, in_buffer, 0, out_buffer);
+  
+          Serial.print("Minimum Focus Direction\n");
+          
+          u8 focus_buffer[4] = {0x0E, 0x00, 0xC0, 0x01};
+          result =
+            NikonLens.sendCommand(CMD_FOCUS_INFO, 8, in_buffer, 0, out_buffer);
+          // Serial.print(in_buffer);
+          result =
+            NikonLens.sendCommand(0xE0, 0, in_buffer, 4, focus_buffer);
+          
+        }
+        else if (n_bytes_out == MAX_FOCUS_DIRN)
+        {
+          result =
+  NikonLens.sendCommand(CMD_GET_INFO_2, 44, in_buffer, 0, out_buffer);
+  
+          u8 focus_buffer[4] = {0x0E, 0x00, 0xC4, 0x81};
+          Serial.print("Infinity Focus Direction\n");
+          
+          result =
+            NikonLens.sendCommand(CMD_FOCUS_INFO, 8, in_buffer, 0, out_buffer);
+          // Serial.print(in_buffer);
+          result =
+            NikonLens.sendCommand(0xE0, 0, in_buffer, 4, focus_buffer);
+        }
+        else
+        {
+          // Serial.print("Unknown direction.");
+        }
+
+        // reset n_bytes_in to a more reasonable number
+        n_bytes_in = 2;
+        n_bytes_out = 0;
+      }
     }
     else
     {
       Serial.print("Command type invalid. Not sending\n");
     }
 
-    //
-    //    if (cmd_is_known(HexInt))
-    //    {
-    //      int nr_bytes_recv = 0;
-    //      int nr_bytes_sent = 0;
-    //      if (HexInt == 0x69)
-    //      {
-    //        loop_main_cmds();
-    //      }
-    //      else if (HexInt == 0xFC)
-    //      {
-    //        get_focus_posn();
-    //      }
-    //      else if (HexInt == 0xCD)
-    //      {
-    //        send_22_23();
-    //      }
-    //      else {
-    //
-    //        if (n_bytes == 0) n_bytes = nr_bytes_recv;
-    //        result =
-    //          NikonLens.sendCommand((u8)HexInt, n_bytes, in_buffer, nr_bytes_sent, out_buffer);
-    //
-    //        //        print_in_buffer(n_bytes);
-    //        print_in_raw(n_bytes);
-    //
-    //      }
-    //    }
-    //    else
-    //    {
-    //      Serial.print("Unknown Command: "); Serial.println(HexInt, HEX);
-    //    }
-    // clear input string
     inputString = "";
     stringComplete = false;
 
@@ -129,6 +167,8 @@ void loop() {
 
    also updates output_buffer with the send command payload bytes
 */
+
+String _dirn = "";
 
 int parse_input_string(String input_string, int *ext_cmd_byte, int *ext_nr_bytes_out, int *ext_nr_bytes_in)
 {
@@ -171,7 +211,7 @@ int parse_input_string(String input_string, int *ext_cmd_byte, int *ext_nr_bytes
 
     for (int i = 0; i < nr_bytes_out; i++)
     {
-      sscanf(input_string.c_str() + offset + secondary_offset + (2 * sizeof(char) * i), "%2s", payload[i]);
+      sscanf(input_string.c_str() + offset + secondary_offset + (3 * sizeof(char) * i), "%2s", payload[i]);
       out_buffer[i] = (int)strtol(payload[i], 0, 16);
       PrintHex8(out_buffer[i]); Serial.print(" ");
     }
@@ -188,7 +228,7 @@ int parse_input_string(String input_string, int *ext_cmd_byte, int *ext_nr_bytes
 
     if (nr_bytes_in > 50) nr_bytes_in = 50;
     if (nr_bytes_in < 0) nr_bytes_in = 0;
-    
+
     *ext_nr_bytes_in = nr_bytes_in;
   }
   else if (_cmd == "SRCV")
@@ -216,12 +256,152 @@ int parse_input_string(String input_string, int *ext_cmd_byte, int *ext_nr_bytes
       out_buffer[i] = (int)strtol(payload[i], 0, 16);
       PrintHex8(out_buffer[i]); Serial.print(" ");
     }
-    
+
     Serial.println();
+  }
+  else if (_cmd == "SPEC")
+  {
+    
+    if (*ext_cmd_byte == 0xFC)
+    {
+      char dirn[5];
+      int n_steps_focus = 0;
+      
+      // reuses ext_nr_bytes_in for the number of steps to turn the focus ring
+      cmd_type = SPEC_CMD_TYPE;
+
+      // parse string and save nr of steps      
+      sscanf(input_string.c_str() + offset, "%4s %d", dirn, &n_steps_focus);
+
+      _dirn = dirn;
+
+      if (n_steps_focus > 12000) n_steps_focus = 12000;
+      if (n_steps_focus < 0)     n_steps_focus = 0;
+
+      *ext_nr_bytes_in = n_steps_focus;
+      
+      // set direction
+      if (_dirn == "MIN")
+      {
+        *ext_nr_bytes_out = MIN_FOCUS_DIRN;
+      }
+      else if (_dirn == "MAX")
+      {
+        *ext_nr_bytes_out = MAX_FOCUS_DIRN;
+      }
+      else
+      {
+        Serial.print("UNKNOWN DIRECTION. CANCELLING\n");
+        *ext_nr_bytes_in = 0;
+      }
+
+
+    }
+    else
+    {
+      Serial.print("Special cmd\n");
+      *ext_cmd_byte = (int)strtol(cmd_byte, 0, 16);
+      cmd_type = SPEC_CMD_TYPE;
+    }
   }
 
 
   return cmd_type;
+}
+
+
+
+void print_in_raw(int n_bytes)
+{
+  for (int i = 0; i < n_bytes; i++)
+  {
+    PrintHex8(in_buffer[i]);
+    Serial.print(" ");
+  }
+  Serial.println("\nRepeated without spacing");
+
+  for (int i = 0; i < n_bytes; i++)
+  {
+    PrintHex8(in_buffer[i]);
+  }
+  Serial.print("\nStatus: "); Serial.println(result == 0 ? "SUCCESS" : "FAIL"); Serial.println();
+}
+
+/** Serial Event
+   Important
+*/
+void serialEvent()
+{
+  while (Serial.available()) {
+    char inChar = (char)Serial.read();
+    if (inChar == '\n' or inChar == '\r') {
+      stringComplete = true;
+      if (inputString == "") inputString = "NULL";
+      inputString.toUpperCase();
+      continue;
+    }
+    inputString += inChar;
+  }
+}
+
+
+
+// OTHERS
+
+
+void aperture_sequence()
+{
+  // c2 recv 4
+  result =
+    NikonLens.sendCommand(0xC2, 4, in_buffer, 0, out_buffer);
+  // print_in_raw(4);
+
+  // e7 recv(send?) 1 - 0x51
+  out_buffer[0] = 0x51;
+  result =
+    NikonLens.sendCommand(0xE7, 0, in_buffer, 1, out_buffer);
+
+  // ea recv(send?) 1 - 0x03
+  out_buffer[0] = 0x03;
+  result =
+    NikonLens.sendCommand(0xEA, 0, in_buffer, 1, out_buffer);
+
+  // 3 dc commands
+  //  for (int i = 0; i < 3; i++)
+  //  {
+  //    result =
+  //      NikonLens.sendCommand(0xDC, 2, in_buffer, 0, out_buffer);
+  //  }
+
+  // da send 0c1b
+  out_buffer[0] = 0x54;
+  out_buffer[1] = 0x1b;
+  result =
+    NikonLens.sendCommand(0xDA, 0, in_buffer, 2, out_buffer);
+
+  Serial.print("Done Aperture:") ;
+
+}
+
+
+// SPEC 40 - turns focus ring in one way weirdly.
+// recv b3 16
+void high_cmds()
+{
+  Serial.println("IN1 IN2 OUT1 OUT2");
+  for (u8 i = 178; i < 180; i++)
+  {
+    result =
+      NikonLens.sendCommand(i, 8, in_buffer, 0, out_buffer);
+    Serial.print("CMD: "); Serial.print(i, HEX); Serial.print("; ");
+    for (u8 index = 0; index < 8; index++)
+    {
+      PrintHex8(in_buffer[index]);
+    }
+    Serial.print("\n");
+    //    Serial.print(out_buffer[0], HEX); Serial.print(" ");
+    //    Serial.print(out_buffer[1], HEX); Serial.print("\n");
+  }
 }
 
 
@@ -327,38 +507,4 @@ bool cmd_is_known(byte in_cmd)
   //          (in_cmd == 0x22));
 
   return true;
-}
-
-
-void print_in_raw(int n_bytes)
-{
-  for (int i = 0; i < n_bytes; i++)
-  {
-    PrintHex8(in_buffer[i]);
-    Serial.print(" ");
-  }
-  Serial.println("\nRepeated without spacing");
-
-  for (int i = 0; i < n_bytes; i++)
-  {
-    PrintHex8(in_buffer[i]);
-  }
-  Serial.print("\nStatus: "); Serial.println(result == 0 ? "SUCCESS" : "FAIL"); Serial.println();
-}
-
-/** Serial Event
-   Important
-*/
-void serialEvent()
-{
-  while (Serial.available()) {
-    char inChar = (char)Serial.read();
-    if (inChar == '\n' or inChar == '\r') {
-      stringComplete = true;
-      if (inputString == "") inputString = "NULL";
-      inputString.toUpperCase();
-      continue;
-    }
-    inputString += inChar;
-  }
 }

@@ -6,6 +6,8 @@
 #define CMD_GET_INFO 0x27
 #define NR_GET_INFO_BYTES 40
 #define CMD_GET_INFO_2 0x28
+#define CMD_FOCUS_INFO 0x26
+#define CMD_START_FOCUS 0xE0 
 
 // test command
 #define CMD_AF_START 0x32
