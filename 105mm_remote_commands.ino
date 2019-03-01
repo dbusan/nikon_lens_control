@@ -39,7 +39,7 @@ void setup() {
 
   // get basic information
   result =
-    NikonLens.sendCommand(CMD_GET_INFO_2, 44, in_buffer, 0, out_buffer);
+    NikonLens.sendCommand(CMD_GET_INFO, 44, in_buffer, 0, out_buffer);
 }
 
 int i = 0;
@@ -94,13 +94,15 @@ void loop() {
 //        aperture_sequence();
         int aperture_value_index = n_bytes_in;
 
-        NikonLens.sendCommand(0xDA, 0, in_buffer, 2, aperture_lookup[aperture_value_index]);
-        Serial.print("Aperture Payload");
+        NikonLens.sendCommand(CMD_SET_APERTURE, 0, in_buffer, 2, aperture_lookup[aperture_value_index]);
+        Serial.print("Aperture Payload ");
         for (u8 i = 0; i < 2; i++)
         {
-          PrintHex8(aperture_lookup[i]); Serial.print(" ");
+          PrintHex8(aperture_lookup[aperture_value_index][i]); Serial.print(" ");
         }
         Serial.println();
+
+        NikonLens.sendCommand(CMD_GET_INFO, 44, in_buffer, 0, out_buffer);
       }
 
       else if (HexCmd == 0x40)
@@ -123,7 +125,7 @@ void loop() {
         if (n_bytes_out == MIN_FOCUS_DIRN)
         {
           result =
-            NikonLens.sendCommand(CMD_GET_INFO_2, 44, in_buffer, 0, out_buffer);
+            NikonLens.sendCommand(CMD_GET_INFO, 44, in_buffer, 0, out_buffer);
 
           Serial.print("Minimum Focus Direction. N Steps: "); Serial.print(n_steps); Serial.println();
 
@@ -160,7 +162,7 @@ void loop() {
           Serial.print("INF Focus Direction. N Steps: "); Serial.print(n_steps); Serial.println();
 
           result =
-            NikonLens.sendCommand(CMD_GET_INFO_2, 44, in_buffer, 0, out_buffer);
+            NikonLens.sendCommand(CMD_GET_INFO, 44, in_buffer, 0, out_buffer);
 
           u8 focus_buffer[4] = {0x0E, 0x00, 0xC4, 0x81};
 
@@ -367,32 +369,36 @@ int parse_input_string(String input_string, int *ext_cmd_byte, int *ext_nr_bytes
       int aperture_integer, aperture_decimal = 0, n_read;
       n_read = sscanf(input_string.c_str() + (offset), "%d.%d", &aperture_integer, &aperture_decimal);
       
-      if (n_read == 1)
-      {
-        Serial.print(aperture_integer); Serial.print(" aperture\n");
-      }
-      else if (n_read == 2)
-      {
-        Serial.print(aperture_integer); Serial.print("."); Serial.println(aperture_decimal);
-      }
+//      if (n_read == 1)
+//      {
+//        Serial.print(aperture_integer); Serial.print(" aperture\n");
+//      }
+//      else if (n_read == 2)
+//      {
+//        Serial.print(aperture_integer); Serial.print("."); Serial.println(aperture_decimal);
+//      }
 
       // iterate the lookup table coz i'm lazy
-      u8 index = -1;
+      int index = -1;
+      Serial.print(" Aperture Integer: "); Serial.println(aperture_integer);
+      Serial.print(" Aperture Decimal: "); Serial.println(aperture_decimal);
       for (u8 i = 0; i < 22; i++)
       {
-        if ((u8)aperture_integer == aperture_floats[i][0])
+        
+        if (aperture_integer == aperture_floats[i][0])
         {
-          if ((u8)aperture_decimal == aperture_floats[i][1])
+          if (aperture_decimal == aperture_floats[i][1])
           {
-            Serial.print("Found aperture:"); Serial.println(aperture_floats[i][0] + "." + aperture_floats[i][1]);
+            Serial.print("Found aperture:"); Serial.println(String(aperture_floats[i][0]) + "." + String(aperture_floats[i][1]));
             index = i;
             break;
           }
         }
       }
+      
       if (index < 0)
       {
-        Serial.print("Did not find match. Setting aperture to default 1.4");
+        Serial.print("Did not find match. Setting aperture to default 1.4\n");
         index = 0;
         
       }
