@@ -10,6 +10,7 @@ using namespace lain;
 #define SENDRECV_CMD_TYPE 3
 #define SPEC_CMD_TYPE 4
 #define FOCUS_CMD_TYPE 5
+#define APERTURE_CMD_TYPE 5
 
 #define MIN_FOCUS_DIRN -1
 #define MAX_FOCUS_DIRN 1
@@ -30,16 +31,15 @@ boolean stringComplete = false;
 void setup() {
   Serial.begin(9600);
 
-  delay(2);
+  delay(2000);
 
   NikonLens.begin(HS_PIN_IN, HS_PIN_OUT);
 
-  delay(500);
-  Serial.print("Enter command in format: [HEX CMD] [N_BYTES_TO_SEND]\n");
+  init_lens();
 
   // get basic information
   result =
-  NikonLens.sendCommand(CMD_GET_INFO_2, 44, in_buffer, 0, out_buffer);
+    NikonLens.sendCommand(CMD_GET_INFO_2, 44, in_buffer, 0, out_buffer);
 }
 
 int i = 0;
@@ -89,9 +89,18 @@ void loop() {
         loop_main_cmds();
       }
 
-      else if (HexCmd == 0x42)
+      else if (HexCmd == 0xAC)
       {
-        aperture_sequence();
+//        aperture_sequence();
+        int aperture_value_index = n_bytes_in;
+
+        NikonLens.sendCommand(0xDA, 0, in_buffer, 2, aperture_lookup[aperture_value_index]);
+        Serial.print("Aperture Payload");
+        for (u8 i = 0; i < 2; i++)
+        {
+          PrintHex8(aperture_lookup[i]); Serial.print(" ");
+        }
+        Serial.println();
       }
 
       else if (HexCmd == 0x40)
@@ -100,32 +109,83 @@ void loop() {
       }
 
       // FOCUS COMMAND
+      // n_bytes_in contains the number of steps to step the focus by
+      // the rough calculation to convert number of steps to hex byte packet is:
+      // for min focus direction: packets = nr_steps >> 1;
+      // for infinity focus dirn: packets = nr_steps >> 1 then set BIT 1 to 1
+      // then the payload is as follows:
+      // 0x0E 0x00 LSB MSB where LSB and MSB are the corresponding bytes from the calculation
+      //
       else if (HexCmd == 0xFC)
       {
-        //
+        int n_steps = n_bytes_in;
+
         if (n_bytes_out == MIN_FOCUS_DIRN)
         {
           result =
-  NikonLens.sendCommand(CMD_GET_INFO_2, 44, in_buffer, 0, out_buffer);
-  
-          Serial.print("Minimum Focus Direction\n");
-          
+            NikonLens.sendCommand(CMD_GET_INFO_2, 44, in_buffer, 0, out_buffer);
+
+          Serial.print("Minimum Focus Direction. N Steps: "); Serial.print(n_steps); Serial.println();
+
           u8 focus_buffer[4] = {0x0E, 0x00, 0xC0, 0x01};
+
+          // 0x01C0
+          // compute step command byte
+          int byte_step_cmd = n_steps >> 1;
+
+          // update output buffer: set LSB then MSB
+
+          // LSB
+          focus_buffer[2]  = (byte_step_cmd & 0xFF);
+          // MSB
+          focus_buffer[3]  = (byte_step_cmd >> 8);
+
+          Serial.print("CMD payload: ");
+
+          for (u8 i = 0; i < 4; i++)
+          {
+            PrintHex8(focus_buffer[i]); Serial.print(" ");
+          }
+          Serial.println();
+
           result =
             NikonLens.sendCommand(CMD_FOCUS_INFO, 8, in_buffer, 0, out_buffer);
           // Serial.print(in_buffer);
           result =
             NikonLens.sendCommand(0xE0, 0, in_buffer, 4, focus_buffer);
-          
+
         }
         else if (n_bytes_out == MAX_FOCUS_DIRN)
         {
+          Serial.print("INF Focus Direction. N Steps: "); Serial.print(n_steps); Serial.println();
+
           result =
-  NikonLens.sendCommand(CMD_GET_INFO_2, 44, in_buffer, 0, out_buffer);
-  
+            NikonLens.sendCommand(CMD_GET_INFO_2, 44, in_buffer, 0, out_buffer);
+
           u8 focus_buffer[4] = {0x0E, 0x00, 0xC4, 0x81};
-          Serial.print("Infinity Focus Direction\n");
-          
+
+          // compute step command byte
+          int byte_step_cmd = n_steps >> 1;
+
+          // update output buffer: set LSB then MSB
+
+          // LSB
+          focus_buffer[2]  = (byte_step_cmd & 0xFF);
+          // MSB
+          focus_buffer[3]  = (byte_step_cmd >> 8);
+
+          // FLIP BIT 1 of MSB to change direction to inf focus
+          focus_buffer[3] |= (1 << 7);
+
+          Serial.print("CMD payload: ");
+
+          for (u8 i = 0; i < 4; i++)
+          {
+            PrintHex8(focus_buffer[i]); Serial.print(" ");
+          }
+          Serial.println();
+
+
           result =
             NikonLens.sendCommand(CMD_FOCUS_INFO, 8, in_buffer, 0, out_buffer);
           // Serial.print(in_buffer);
@@ -141,6 +201,7 @@ void loop() {
         n_bytes_in = 2;
         n_bytes_out = 0;
       }
+
     }
     else
     {
@@ -261,16 +322,16 @@ int parse_input_string(String input_string, int *ext_cmd_byte, int *ext_nr_bytes
   }
   else if (_cmd == "SPEC")
   {
-    
+
     if (*ext_cmd_byte == 0xFC)
     {
       char dirn[5];
       int n_steps_focus = 0;
-      
+
       // reuses ext_nr_bytes_in for the number of steps to turn the focus ring
       cmd_type = SPEC_CMD_TYPE;
 
-      // parse string and save nr of steps      
+      // parse string and save nr of steps
       sscanf(input_string.c_str() + offset, "%4s %d", dirn, &n_steps_focus);
 
       _dirn = dirn;
@@ -279,7 +340,7 @@ int parse_input_string(String input_string, int *ext_cmd_byte, int *ext_nr_bytes
       if (n_steps_focus < 0)     n_steps_focus = 0;
 
       *ext_nr_bytes_in = n_steps_focus;
-      
+
       // set direction
       if (_dirn == "MIN")
       {
@@ -297,6 +358,48 @@ int parse_input_string(String input_string, int *ext_cmd_byte, int *ext_nr_bytes
 
 
     }
+    else if (*ext_cmd_byte == 0xAC)
+    {
+      // reuses ext_nr_bytes_in for the aperture value 
+      cmd_type = SPEC_CMD_TYPE;
+
+      // parse string and save nr of steps
+      int aperture_integer, aperture_decimal = 0, n_read;
+      n_read = sscanf(input_string.c_str() + (offset), "%d.%d", &aperture_integer, &aperture_decimal);
+      
+      if (n_read == 1)
+      {
+        Serial.print(aperture_integer); Serial.print(" aperture\n");
+      }
+      else if (n_read == 2)
+      {
+        Serial.print(aperture_integer); Serial.print("."); Serial.println(aperture_decimal);
+      }
+
+      // iterate the lookup table coz i'm lazy
+      u8 index = -1;
+      for (u8 i = 0; i < 22; i++)
+      {
+        if ((u8)aperture_integer == aperture_floats[i][0])
+        {
+          if ((u8)aperture_decimal == aperture_floats[i][1])
+          {
+            Serial.print("Found aperture:"); Serial.println(aperture_floats[i][0] + "." + aperture_floats[i][1]);
+            index = i;
+            break;
+          }
+        }
+      }
+      if (index < 0)
+      {
+        Serial.print("Did not find match. Setting aperture to default 1.4");
+        index = 0;
+        
+      }
+      *ext_nr_bytes_in = index;
+
+      // find aperture in table
+    }
     else
     {
       Serial.print("Special cmd\n");
@@ -309,7 +412,90 @@ int parse_input_string(String input_string, int *ext_cmd_byte, int *ext_nr_bytes
   return cmd_type;
 }
 
+void init_lens()
+{
+  // cmd byte 0x40. receive 7 bytes send 2 bytes
+  u8 _cmd_byte = 0x40;
+  u8 comms_init[2] = {0x02, 0x21};
+  // send byte
+  NikonLens.sendCommand(_cmd_byte, 7, in_buffer, 2, comms_init);
 
+  // print camera response
+  Serial.print("1. 0x40 - ");
+  print_in_raw(7);
+
+  // recv 2 bytes from 0x41
+  _cmd_byte = 0x41;
+  NikonLens.sendCommand(_cmd_byte, 2, in_buffer, 0, out_buffer);
+
+  // print response from lens
+  Serial.print("2. 0x41 - ");
+  print_in_raw(2);
+
+  _cmd_byte = 0x40;
+  NikonLens.sendCommand(_cmd_byte, 7, in_buffer, 2, comms_init);
+
+  // print lens response once again.
+  // should be at 153.6 khz now
+  Serial.print("3. 0x40 - ");
+  print_in_raw(7);
+
+  // get full lens info now
+  _cmd_byte = 0x28;
+  NikonLens.sendCommand(_cmd_byte, 44, in_buffer, 0, out_buffer);
+  // print result
+  Serial.print("4. 0x28 - ");
+  print_in_raw(44);
+  delay(3);
+
+  // get short info - heartbeat
+  _cmd_byte = 0xE7;
+  out_buffer[0] = 0x51;
+  NikonLens.sendCommand(_cmd_byte, 0, in_buffer, 1, out_buffer);
+  // print result
+  Serial.print("5. 0xE7 sent 0x51\n");
+  delay(3);
+  //  print_in_raw(1);
+  //
+  //  // get short info - heartbeat
+  _cmd_byte = 0xC2;
+  NikonLens.sendCommand(_cmd_byte, 4, in_buffer, 0, out_buffer);
+  // print result
+  Serial.print("6. 0xC2 - ");
+  print_in_raw(4);
+  delay(3);
+  //
+
+  // SET APERTURE
+  _cmd_byte = 0xDA;
+  out_buffer[0] = 0xFF;
+  out_buffer[1] = 0xFF;
+  NikonLens.sendCommand(_cmd_byte, 0, in_buffer, 2, out_buffer);
+  // print result
+  Serial.print("7. 0xDA sent 0xFF 0xFF\n");
+  delay(3);
+  //  print_in_raw(1);
+
+  for (u8 i = 0; i < 6; i++)
+  {
+    // 5th and 6th iteration the response should be different.
+  }
+
+  _cmd_byte = 0xC2;
+  NikonLens.sendCommand(_cmd_byte, 4, in_buffer, 0, out_buffer);
+  // print result
+  Serial.print("8. 0xC2 - ");
+  print_in_raw(4);
+
+  // get short info - heartbeat
+  _cmd_byte = 0xEA;
+  out_buffer[0] = 0x03;
+  NikonLens.sendCommand(_cmd_byte, 0, in_buffer, 1, out_buffer);
+  // print result
+  Serial.print("9. 0xEA sent 0x03\n");
+  
+
+}
 
 void print_in_raw(int n_bytes)
 {
@@ -318,13 +504,14 @@ void print_in_raw(int n_bytes)
     PrintHex8(in_buffer[i]);
     Serial.print(" ");
   }
-  Serial.println("\nRepeated without spacing");
-
-  for (int i = 0; i < n_bytes; i++)
-  {
-    PrintHex8(in_buffer[i]);
-  }
-  Serial.print("\nStatus: "); Serial.println(result == 0 ? "SUCCESS" : "FAIL"); Serial.println();
+  //  Serial.println("\nRepeated without spacing");
+  //
+  //  for (int i = 0; i < n_bytes; i++)
+  //  {
+  //    PrintHex8(in_buffer[i]);
+  //  }
+  // Serial.print("\nStatus: "); Serial.println(result == 0 ? "SUCCESS" : "FAIL");
+  Serial.println();
 }
 
 /** Serial Event
@@ -351,21 +538,27 @@ void serialEvent()
 
 void aperture_sequence()
 {
+  // dc 2
+  result =
+    NikonLens.sendCommand(0xDC, 2, in_buffer, 0, out_buffer);
+  delay(5);
   // c2 recv 4
   result =
     NikonLens.sendCommand(0xC2, 4, in_buffer, 0, out_buffer);
   // print_in_raw(4);
-
+  delay(5);
+  
   // e7 recv(send?) 1 - 0x51
   out_buffer[0] = 0x51;
   result =
     NikonLens.sendCommand(0xE7, 0, in_buffer, 1, out_buffer);
-
+  
+  delay(5);
   // ea recv(send?) 1 - 0x03
   out_buffer[0] = 0x03;
   result =
     NikonLens.sendCommand(0xEA, 0, in_buffer, 1, out_buffer);
-
+  delay(5);
   // 3 dc commands
   //  for (int i = 0; i < 3; i++)
   //  {
@@ -374,12 +567,12 @@ void aperture_sequence()
   //  }
 
   // da send 0c1b
-  out_buffer[0] = 0x54;
-  out_buffer[1] = 0x1b;
+  out_buffer[0] = 0x24;
+  out_buffer[1] = 0x21;
   result =
     NikonLens.sendCommand(0xDA, 0, in_buffer, 2, out_buffer);
 
-  Serial.print("Done Aperture:") ;
+  Serial.print("Done Aperture:");
 
 }
 
