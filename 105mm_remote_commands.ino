@@ -1,8 +1,11 @@
+
 #include <NikonLens.h>
 #include <numeric.h>
 #include "constants.h"
 
-using namespace lain;
+
+
+using namespace lens;
 
 #define INVALID_CMD_TYPE 0
 #define SEND_CMD_TYPE 1
@@ -23,7 +26,7 @@ uint8_t out_buffer[10];
 
 uint8_t serial_in[255];
 
-tNikonLens::tResultCode result;
+NikonLens_Class::tResultCode result;
 
 String inputString     = "";
 boolean stringComplete = false;
@@ -31,14 +34,14 @@ boolean stringComplete = false;
 void setup() {
   Serial.begin(9600);
 
-  delay(2000);
+  delay(1000);
 
-  NikonLens.begin(HS_PIN_IN, HS_PIN_OUT);
+  NikonLens.begin();
 
-  init_lens();
-
-  // get basic information
-  result =
+//  init_lens();
+//
+//  // get basic information
+//  result =
     NikonLens.sendCommand(CMD_GET_INFO, 44, in_buffer, 0, out_buffer);
 }
 
@@ -86,7 +89,12 @@ void loop() {
     {
       if (HexCmd == 0x69) // 105 decimal is 69 hex
       {
-        loop_main_cmds();
+//        loop_main_cmds();
+          NikonLens.initLens();
+      }
+      else if (HexCmd == 0xCC)
+      {
+        step_thru_focus();
       }
 
       else if (HexCmd == 0xAC)
@@ -418,6 +426,25 @@ int parse_input_string(String input_string, int *ext_cmd_byte, int *ext_nr_bytes
   return cmd_type;
 }
 
+void step_thru_focus()
+{
+  // go to max focus
+  Serial.print("Stepping thru focus steps from min to max\n");
+  NikonLens.driveFocus(12000);
+  delay(1500);
+  NikonLens.printInputBuffer();
+  // then step from min to max in 600 step increments
+  for (u8 i = 0; i < 15; i++)
+  {
+    NikonLens.driveFocus(-600);
+    delay(500);
+    NikonLens.printInputBuffer();
+    delay(800);
+    
+  }
+  
+}
+
 void init_lens()
 {
   // cmd byte 0x40. receive 7 bytes send 2 bytes
@@ -512,10 +539,10 @@ void print_in_raw(int n_bytes)
   }
   //  Serial.println("\nRepeated without spacing");
   //
-  //  for (int i = 0; i < n_bytes; i++)
-  //  {
-  //    PrintHex8(in_buffer[i]);
-  //  }
+    for (int i = 0; i < n_bytes; i++)
+    {
+      PrintHex8(in_buffer[i]);
+    }
   // Serial.print("\nStatus: "); Serial.println(result == 0 ? "SUCCESS" : "FAIL");
   Serial.println();
 }
@@ -610,7 +637,7 @@ void high_cmds()
 void loop_main_cmds()
 {
   Serial.println("IN1 IN2 OUT1 OUT2");
-  for (u8 i = 0; i < 255; i++)
+  for (u8 i = 64; i < 66; i++)
   {
     result =
       NikonLens.sendCommand(i, 8, in_buffer, 0, out_buffer);

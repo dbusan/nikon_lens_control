@@ -1,7 +1,6 @@
 #ifndef _CONSTANTS_H_
 #define _CONSTANTS_H_
 
-
 // known commands
 #define CMD_GET_INFO      0x28
 #define CMD_FOCUS_INFO    0x26
