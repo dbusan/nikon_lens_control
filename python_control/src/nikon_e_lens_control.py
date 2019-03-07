@@ -86,7 +86,8 @@ class Lens:
             # write data to serial
             self.serial_connection.write(payload_data)
             #
-            print(self.serial_connection.read_all().decode('utf-8'))
+            # free input buffer from serial
+            self.serial_connection.read_all().decode('utf-8')
 
         else:
             print('Serial connection must be open first.')
@@ -100,7 +101,8 @@ class Lens:
             # send payload
             self.serial_connection.write(payload_data)
 
-            print(self.serial_connection.read_all().decode('utf-8'))
+            # free input buffer from serial
+            self.serial_connection.read_all().decode('utf-8')
 
         else:
             print('Serial connection must be open before driving focus.')
