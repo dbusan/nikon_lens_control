@@ -1,11 +1,12 @@
 # Nikon Lens Control Repository
----
 Author: Daniel Busan
+Date: 2019/03/07
 
 ## Description
+This repository contains the software used to control a Nikon Camera Lens connected to an Arduino Microcontroller.
+
 This repository contains two sets of source code: one for the Arduino connected to the Nikon Lens - ```micro_firmware```, the other for the Python module and example code to control it - ```python_control```.
 
----
 
 ## Usage
 ```python_control``` contains the nikon_e_lens_control library. This library opens a serial connection to a connected Arduino that is flashed with ```micro_firmware``` and has the ```NikonLens``` library available (either in the ```~/Arduino/libraries``` or locally). 
