@@ -1,0 +1,7 @@
+/.project
+
+/python_control/.idea
+python_control/venv/
+
+*.pyc
+*__pycache__/*
